@@ -37,3 +37,6 @@ Thumbs.db
 
 # Output
 SKILL.md
+
+# V2 Cache
+.cache/
