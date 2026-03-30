@@ -4,10 +4,20 @@ Convert a GitHub repository into a concise, human-readable OpenClaw-style `SKILL
 
 ## What it does
 
-1. Fetches the file tree of any public (or private, with a token) GitHub repository.
-2. Scores and selects the most relevant files — READMEs, docs, top-level source files — while ignoring noise like `node_modules`, lock files, and generated artefacts.
-3. Fetches the content of those files and truncates each to a manageable excerpt.
-4. Sends the context to an OpenAI model (falls back to a template when no API key is set) to generate a short `SKILL.md`.
+This tool extracts the most meaningful reusable skill or pattern from a GitHub repository and generates a concise `SKILL.md` summary.
+
+**v1 (simple pipeline):**
+1. Fetches the file tree and selects the most relevant files
+2. Truncates content to manageable excerpts
+3. Generates SKILL.md via OpenAI (or template fallback)
+
+**v2 (RAG pipeline):**
+1. Fetches and selects high-value files from the repository
+2. Chunks files into meaningful pieces
+3. Generates embeddings and indexes them locally (FAISS)
+4. Retrieves most relevant chunks via semantic search
+5. Generates SKILL.md using retrieved context (supports vLLM or OpenAI)
+6. Caches embeddings, vector stores, and responses for efficiency
 
 The result is **concise and human-editable** — a quick summary that captures the core skill or pattern of the repository.
 
@@ -17,15 +27,25 @@ The result is **concise and human-editable** — a quick summary that captures t
 # Install dependencies
 pip install -r requirements.txt
 
-# Run (uses GITHUB_TOKEN env var if set)
+# v1: Simple, fast pipeline
 python main.py --repo openai/openai-python
+
+# v2: RAG pipeline with retrieval
+python main.py --repo openai/openai-python --v2
+
+# v2 with vLLM (requires local vLLM server)
+python main.py --repo openai/openai-python --v2 --use-vllm
 
 # With explicit token and custom output path
 python main.py --repo owner/repo --token ghp_... --output my-skill.md
 ```
 
-Set `OPENAI_API_KEY` in your environment to enable LLM-powered generation.  
-Without it, a template-based SKILL.md is produced instead.
+**Environment variables:**
+- `GITHUB_TOKEN`: GitHub personal access token (optional, raises rate limits)
+- `OPENAI_API_KEY`: OpenAI API key (required for LLM generation, otherwise uses template)
+- `VLLM_API_BASE`: vLLM server URL (default: `http://localhost:8000/v1`)
+- `VLLM_MODEL`: Model name for vLLM (default: `meta-llama/Llama-3.1-8B-Instruct`)
+- `RAG_CACHE_DIR`: Cache directory for v2 (default: `.cache`)
 
 ## Output format
 
@@ -50,15 +70,78 @@ One short paragraph.
 ## Project layout
 
 ```
-main.py          # CLI entry point
+main.py          # CLI entry point with v1/v2 mode selection
 src/
+  # Core v1 components
   fetcher.py     # GitHub API — fetch file tree and file content
   selector.py    # Score and select high-value files
-  generator.py   # Generate SKILL.md (OpenAI + template fallback)
+  generator.py   # v1 generation (OpenAI + template fallback)
+
+  # v2 RAG pipeline components
+  config.py      # Configuration for v2 pipeline
+  chunker.py     # Split files into meaningful chunks
+  embedder.py    # Generate and cache embeddings
+  vector_store.py # FAISS-based local vector store
+  retriever.py   # RAG retrieval coordinator
+  llm_client.py  # LLM client (vLLM + OpenAI support)
+  generator_v2.py # v2 generation with RAG
+  cache.py       # Response caching
+
 tests/
   test_fetcher.py
   test_selector.py
   test_generator.py
+  test_chunker.py
+  test_cache.py
+  test_retriever.py
+```
+
+## V2 Architecture
+
+The v2 pipeline adds retrieval-augmented generation for better context selection:
+
+**Key components:**
+- **Chunker**: Splits code and docs into overlapping chunks while preserving structure
+- **Embedder**: Uses `sentence-transformers` for local embedding generation with disk cache
+- **Vector Store**: FAISS-based similarity search, persisted locally
+- **Retriever**: Coordinates chunking → embedding → indexing → retrieval
+- **LLM Client**: Unified interface for vLLM (local) and OpenAI (API)
+- **Cache**: Three-level caching (embeddings, vector stores, responses)
+
+**Design principles followed:**
+- ✅ Simple: Local file-based storage, no complex infrastructure
+- ✅ Incremental: v1 still works, v2 is opt-in via `--v2` flag
+- ✅ Practical: Caching where it matters (embeddings, responses)
+- ✅ Focused: Still generates concise SKILL.md, not full documentation
+
+## Using vLLM (optional)
+
+To use a local LLM via vLLM:
+
+```bash
+# Start vLLM server (in another terminal)
+vllm serve meta-llama/Llama-3.1-8B-Instruct --port 8000
+
+# Run with vLLM
+export USE_VLLM=true
+python main.py --repo owner/repo --v2 --use-vllm
+```
+
+Or configure via environment variables in `src/config.py`.
+
+## Caching behavior
+
+V2 caches aggressively to avoid redundant work:
+
+- **Embedding cache**: Chunks with identical text reuse embeddings
+- **Vector store cache**: Repository indexes are saved and reloaded
+- **Response cache**: Identical prompts return cached LLM responses
+
+Cache location: `.cache/` (configurable via `RAG_CACHE_DIR`)
+
+To clear caches:
+```bash
+rm -rf .cache/
 ```
 
 ## Running tests
