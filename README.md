@@ -98,6 +98,58 @@ tests/
 
 ## V2 Architecture
 
+```
+GitHub Repo
+   |
+   v
+[Ingestion]
+   - git clone / fetch
+   - collect README, docs, source, tests
+   - ignore noise
+   |
+   v
+[Chunking]
+   - split by markdown sections
+   - split by function/class
+   - keep file path + line metadata
+   |
+   v
+[Indexing]
+   - create embeddings
+   - store in vector DB (FAISS)
+   - cache embeddings / file hashes
+   |
+   v
+[Retrieval]
+   - query: "what is the main skill of this repo?"
+   - get top-k chunks
+   - optional rerank
+   |
+   v
+[Context Assembly]
+   - merge relevant chunks
+   - keep short context
+   - deduplicate
+   |
+   v
+[LLM Generation via vLLM]
+   - generate concise SKILL.md
+   - use fixed prompt template
+   |
+   v
+[Postprocess]
+   - trim verbosity
+   - enforce structure
+   - check readability
+   |
+   v
+[Human Review]
+   - edit if needed
+   |
+   v
+Output: SKILL.md
+```
+
 The v2 pipeline adds retrieval-augmented generation for better context selection:
 
 **Key components:**
