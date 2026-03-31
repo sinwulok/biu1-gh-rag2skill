@@ -1,0 +1,47 @@
+# config.example.yaml
+#
+# Example configuration for biu1-gh-rag2skill.
+# Copy to configs/config.yaml and adjust as needed.
+# All values here match the defaults in src/config.py.
+#
+# Note: API keys and tokens must NOT be placed here.
+# Use environment variables or a local .env file (gitignored).
+
+cache:
+  # Directory for all cached data (embeddings, vector stores, responses).
+  # Override with the RAG_CACHE_DIR environment variable.
+  dir: .cache
+
+chunking:
+  # Maximum characters per chunk.
+  chunk_size: 800
+  # Character overlap between adjacent chunks to preserve context.
+  chunk_overlap: 100
+  # Maximum chunks extracted per file; prevents large files dominating retrieval.
+  max_chunks_per_file: 50
+
+embedding:
+  # sentence-transformers model name.
+  # all-MiniLM-L6-v2 is fast and produces 384-dim embeddings.
+  # Swap for a larger model (e.g. all-mpnet-base-v2) for higher quality.
+  model: all-MiniLM-L6-v2
+  # Batch size for embedding generation.
+  batch_size: 32
+
+retrieval:
+  # Number of chunks to retrieve per query.
+  top_k: 8
+  # Minimum cosine similarity score; chunks below this are discarded.
+  min_similarity: 0.3
+
+llm:
+  # vLLM server base URL (used when --use-vllm is passed).
+  # Override with the VLLM_API_BASE environment variable.
+  vllm_api_base: http://localhost:8000/v1
+  # Model name served by vLLM.
+  # Override with the VLLM_MODEL environment variable.
+  vllm_model: meta-llama/Llama-3.1-8B-Instruct
+  # Maximum tokens for LLM generation.
+  max_generation_tokens: 1000
+  # Sampling temperature (lower = more deterministic).
+  generation_temperature: 0.3
