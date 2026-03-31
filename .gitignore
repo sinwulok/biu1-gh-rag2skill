@@ -35,8 +35,9 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Output
-SKILL.md
+# Generated output files (not the root SKILL.md which describes this project)
+*-skill.md
+generated-skill.md
 
 # V2 Cache
 .cache/

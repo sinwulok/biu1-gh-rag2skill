@@ -1,91 +1,90 @@
 # biu1-gh-rag2skill
 
-Convert a GitHub repository into a concise, human-readable OpenClaw-style `SKILL.md`.
+A Python CLI that reads a GitHub repository and drafts a concise `SKILL.md` using lightweight RAG.
+
+## Why it exists
+
+Summarizing an unfamiliar repository well enough to reuse it is slow.
+This tool automates the first pass: it fetches the most relevant files, retrieves the most relevant chunks via semantic search, and asks an LLM to produce a structured one-page skill card.
+The output is a **draft** — always review and edit before treating it as authoritative.
 
 ## What it does
 
-This tool extracts the most meaningful reusable skill or pattern from a GitHub repository and generates a concise `SKILL.md` summary.
+1. Fetches the file tree and selects high-value files (README, docs, source, tests).
+2. Chunks files into overlapping segments; generates local embeddings (sentence-transformers).
+3. Indexes chunks in a local FAISS vector store; retrieves the top-k most relevant ones.
+4. Sends retrieved context to an LLM (OpenAI API or local vLLM) to generate a structured `SKILL.md`.
+5. Caches embeddings, vector stores, and LLM responses so repeated runs are fast.
 
-**v1 (simple pipeline):**
-1. Fetches the file tree and selects the most relevant files
-2. Truncates content to manageable excerpts
-3. Generates SKILL.md via OpenAI (or template fallback)
+## What it does not do
 
-**v2 (RAG pipeline):**
-1. Fetches and selects high-value files from the repository
-2. Chunks files into meaningful pieces
-3. Generates embeddings and indexes them locally (FAISS)
-4. Retrieves most relevant chunks via semantic search
-5. Generates SKILL.md using retrieved context (supports vLLM or OpenAI)
-6. Caches embeddings, vector stores, and responses for efficiency
-
-The result is **concise and human-editable** — a quick summary that captures the core skill or pattern of the repository.
+- Does not generate full project documentation.
+- Does not commit or push anything; writes output to the local filesystem only.
+- Does not guarantee correctness — the generated skill card is a starting point, not a finished artefact.
 
 ## Quick start
 
 ```bash
-# Install dependencies
+# 1. Install
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# v1: Simple, fast pipeline
-python main.py --repo openai/openai-python
+# 2. Set your API key (or use a local vLLM server — see below)
+export OPENAI_API_KEY=sk-...
+export GITHUB_TOKEN=ghp_...   # optional, raises rate limits
 
-# v2: RAG pipeline with retrieval
-python main.py --repo openai/openai-python --v2
+# 3. Run
+python main.py --repo openai/openai-python        # simple pipeline
+python main.py --repo openai/openai-python --v2   # RAG pipeline (recommended)
 
-# v2 with vLLM (requires local vLLM server)
-python main.py --repo openai/openai-python --v2 --use-vllm
-
-# With explicit token and custom output path
-python main.py --repo owner/repo --token ghp_... --output my-skill.md
+# Custom output path
+python main.py --repo owner/repo --v2 --output my-skill.md
 ```
 
-**Environment variables:**
-- `GITHUB_TOKEN`: GitHub personal access token (optional, raises rate limits)
-- `OPENAI_API_KEY`: OpenAI API key (required for LLM generation, otherwise uses template)
-- `VLLM_API_BASE`: vLLM server URL (default: `http://localhost:8000/v1`)
-- `VLLM_MODEL`: Model name for vLLM (default: `meta-llama/Llama-3.1-8B-Instruct`)
-- `RAG_CACHE_DIR`: Cache directory for v2 (default: `.cache`)
+The generated file is a draft — **review and edit it** before use.
 
-## Output format
+## Environment variables
 
-```md
-# Skill Name
+| Variable | Default | Purpose |
+|---|---|---|
+| `GITHUB_TOKEN` | _(none)_ | GitHub PAT — raises API rate limits |
+| `OPENAI_API_KEY` | _(none)_ | Required for LLM generation; falls back to template if unset |
+| `VLLM_API_BASE` | `http://localhost:8000/v1` | vLLM server URL |
+| `VLLM_MODEL` | `meta-llama/Llama-3.1-8B-Instruct` | Model name for vLLM |
+| `RAG_CACHE_DIR` | `.cache` | Cache directory for embeddings and responses |
 
-## What this skill does
-One short paragraph.
+## Using a local LLM (vLLM)
 
-## When to use it
-- Bullet point
-- Bullet point
+```bash
+# In a separate terminal, start vLLM
+vllm serve meta-llama/Llama-3.1-8B-Instruct --port 8000
 
-## Key idea
-- Bullet point
-- Bullet point
-
-## Important files
-- `path/to/file` — brief explanation
+# Then run with --use-vllm
+python main.py --repo owner/repo --v2 --use-vllm
 ```
 
-## Project layout
+## Repository layout
 
 ```
-main.py          # CLI entry point with v1/v2 mode selection
+main.py               # CLI entry point
+requirements.txt
+pyproject.toml
+
 src/
-  # Core v1 components
-  fetcher.py     # GitHub API — fetch file tree and file content
-  selector.py    # Score and select high-value files
-  generator.py   # v1 generation (OpenAI + template fallback)
+  fetcher.py          # GitHub API — fetch file tree and content
+  selector.py         # Score and select high-value files
+  generator.py        # v1 generation (OpenAI + template fallback)
+  config.py           # Tunable parameters for v2 pipeline
+  chunker.py          # Split files into overlapping chunks
+  embedder.py         # Local embeddings via sentence-transformers
+  vector_store.py     # FAISS-based local vector store
+  retriever.py        # RAG coordinator (chunk → embed → index → retrieve)
+  llm_client.py       # Unified LLM interface (vLLM + OpenAI)
+  generator_v2.py     # v2 generation with RAG context
+  cache.py            # Response caching (disk-based)
 
-  # v2 RAG pipeline components
-  config.py      # Configuration for v2 pipeline
-  chunker.py     # Split files into meaningful chunks
-  embedder.py    # Generate and cache embeddings
-  vector_store.py # FAISS-based local vector store
-  retriever.py   # RAG retrieval coordinator
-  llm_client.py  # LLM client (vLLM + OpenAI support)
-  generator_v2.py # v2 generation with RAG
-  cache.py       # Response caching
+configs/
+  config.example.yaml # Example configuration with all defaults
 
 tests/
   test_fetcher.py
@@ -96,109 +95,10 @@ tests/
   test_retriever.py
 ```
 
-## V2 Architecture
-
-```
-GitHub Repo
-   |
-   v
-[Ingestion]
-   - git clone / fetch
-   - collect README, docs, source, tests
-   - ignore noise
-   |
-   v
-[Chunking]
-   - split by markdown sections
-   - split by function/class
-   - keep file path + line metadata
-   |
-   v
-[Indexing]
-   - create embeddings
-   - store in vector DB (FAISS)
-   - cache embeddings / file hashes
-   |
-   v
-[Retrieval]
-   - query: "what is the main skill of this repo?"
-   - get top-k chunks
-   - optional rerank
-   |
-   v
-[Context Assembly]
-   - merge relevant chunks
-   - keep short context
-   - deduplicate
-   |
-   v
-[LLM Generation via vLLM]
-   - generate concise SKILL.md
-   - use fixed prompt template
-   |
-   v
-[Postprocess]
-   - trim verbosity
-   - enforce structure
-   - check readability
-   |
-   v
-[Human Review]
-   - edit if needed
-   |
-   v
-Output: SKILL.md
-```
-
-The v2 pipeline adds retrieval-augmented generation for better context selection:
-
-**Key components:**
-- **Chunker**: Splits code and docs into overlapping chunks while preserving structure
-- **Embedder**: Uses `sentence-transformers` for local embedding generation with disk cache
-- **Vector Store**: FAISS-based similarity search, persisted locally
-- **Retriever**: Coordinates chunking → embedding → indexing → retrieval
-- **LLM Client**: Unified interface for vLLM (local) and OpenAI (API)
-- **Cache**: Three-level caching (embeddings, vector stores, responses)
-
-**Design principles followed:**
-- ✅ Simple: Local file-based storage, no complex infrastructure
-- ✅ Incremental: v1 still works, v2 is opt-in via `--v2` flag
-- ✅ Practical: Caching where it matters (embeddings, responses)
-- ✅ Focused: Still generates concise SKILL.md, not full documentation
-
-## Using vLLM (optional)
-
-To use a local LLM via vLLM:
-
-```bash
-# Start vLLM server (in another terminal)
-vllm serve meta-llama/Llama-3.1-8B-Instruct --port 8000
-
-# Run with vLLM
-export USE_VLLM=true
-python main.py --repo owner/repo --v2 --use-vllm
-```
-
-Or configure via environment variables in `src/config.py`.
-
-## Caching behavior
-
-V2 caches aggressively to avoid redundant work:
-
-- **Embedding cache**: Chunks with identical text reuse embeddings
-- **Vector store cache**: Repository indexes are saved and reloaded
-- **Response cache**: Identical prompts return cached LLM responses
-
-Cache location: `.cache/` (configurable via `RAG_CACHE_DIR`)
-
-To clear caches:
-```bash
-rm -rf .cache/
-```
+See [`DESIGN.md`](DESIGN.md) for the full technical design.
 
 ## Running tests
 
 ```bash
-pip install pytest
 python -m pytest tests/ -v
 ```
